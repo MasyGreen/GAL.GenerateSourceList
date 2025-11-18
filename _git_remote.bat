@@ -23,7 +23,7 @@ git remote -v
 
 powershell write-host -fore Blue -=Добавление=-
 
-SET "MY_ARRAY=origin#localhost:3000 origingit#github.com originbit#bitbucket"
+SET "MY_ARRAY=origin#github.com originloc#localhost:3000 originbit#bitbucket"
 
 SETLOCAL EnableDelayedExpansion
 FOR %%m IN (%MY_ARRAY%) DO (
