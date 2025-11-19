@@ -1,7 +1,9 @@
+import sys
 from datetime import datetime
 import json
 import os
 import os.path
+from pathlib import Path
 
 import keyboard
 import xlsxwriter
@@ -94,7 +96,7 @@ def print_warning(*values):
 
 def print_header(*values):
     for value in values:
-        print(f'{Fore.MAGENTA}{value}')
+        print(f'{Fore.BLUE}{value}')
 
 
 def print_step1(*values):
@@ -125,35 +127,33 @@ def clear_form_name(value):
 # Read or create Settings file
 def read_settings(settings_file_name):
     app_settings = AppSettings()
+    members = [attr for attr in dir(app_settings) if
+               not callable(getattr(app_settings, attr)) and not attr.startswith("__")]
 
     # Create settings file
     if not os.path.exists(settings_file_name):
         print_header(f'Create new {settings_file_name}...')
+
+        default = {}
+
         # Default json value
-        default = {"folder_process": "", "folder_result": "", "show_skip": False, "use_diff": True, "ext_vip": True,
-                   "ext_slk": True, "ext_rtf": True, "ext_gcd": True, "ext_fr3": False}
+        for member in members:
+            default[member] = getattr(app_settings, member)
 
         # Write default value to json file
         with open(settings_file_name, "w", encoding="utf-8") as f:
             json.dump(default, f, ensure_ascii=False, indent=2)
 
         # Return default value
-        return app_settings
+        return False, app_settings
 
     with open(settings_file_name, "r", encoding="utf-8") as f:
         cfg = json.load(f)
 
-    app_settings.folder_process = cfg.get("folder_process", "")
-    app_settings.folder_result = cfg.get("folder_result", "")
-    app_settings.show_skip = cfg.get("show_skip", False)
-    app_settings.use_diff = cfg.get("use_diff", True)
-    app_settings.ext_vip = cfg.get("ext_vip", True)
-    app_settings.ext_slk = cfg.get("ext_slk", True)
-    app_settings.ext_rtf = cfg.get("ext_rtf", True)
-    app_settings.ext_gcd = cfg.get("ext_gcd", True)
-    app_settings.ext_fr3 = cfg.get("ext_fr3", False)
+    for member in members:
+        setattr(app_settings, member, cfg.get(member, getattr(app_settings, member)))
 
-    return app_settings
+    return True, app_settings
 
 
 # Create excel column
@@ -541,11 +541,23 @@ def main(app_settings):
         for item in sorted(res_item_list, key=lambda i: i[CC.CATALOG]):
             cur_format = cell_format
 
-            if item.get(CC.CATALOG)[:3] == 'OFF':
-                cur_format = cell_format_off
+            flist = []
 
-            if item.get(CC.VIPFCOM_FILE_PATH) is not None and item.get(CC.VIPFCOM_FILE_PATH).find('Отключено') != -1:
-                cur_format = cell_format_off
+            # Folder (source)
+            if item.get(CC.VIPFCOM_FILE_PATH) is not None:
+                flist.append(item.get(CC.VIPFCOM_FILE_PATH))
+
+            # Folder (def) (source can be empty)
+            if item.get(CC.DEFRES_FILE_PATH) is not None:
+                flist.append(item.get(CC.DEFRES_FILE_PATH))
+
+            # All subfolder
+            for fitem in flist:
+                path = Path(fitem)
+                folder_list = [parent.name for parent in path.parents]
+                for folder in folder_list:
+                    if folder[:4].lower() == 'off ' or folder.lower().find('отключено') != -1:
+                        cur_format = cell_format_off
 
             for row in ListExcelColumn:
                 row_num = row.get("Num")
@@ -565,29 +577,41 @@ if __name__ == "__main__":
     settings_file_name = "config.json"
 
     # Read or create Settings
-    app_settings = read_settings(settings_file_name)
+    is_exist, app_settings = read_settings(settings_file_name)
 
     if app_settings.folder_result is None or len(app_settings.folder_result) == 0:
         app_settings.folder_result = os.getcwd()
 
-    # Comment
-    print_value(f'Folder (process): {app_settings.folder_process}')
-    print_value(f'Folder (result): {app_settings.folder_result}')
-    print_value(f'Process *.vip: {app_settings.ext_vip}')
-    print_value(f'Process *.slk: {app_settings.ext_slk}')
-    print_value(f'Process *.rtf: {app_settings.ext_rtf}')
-    print_value(f'Process *.gcd: {app_settings.ext_gcd}')
-    print_value(f'Process *.fr3: {app_settings.ext_fr3}')
+    if not is_exist:
+        print_error(f'Create default setings: {settings_file_name}')
+        print_result(f'\n*Press Space to Exit...')
+        keyboard.wait("space")
+        sys.exit(0)
+    elif not os.path.isdir(app_settings.folder_process) or not os.path.isdir(app_settings.folder_result):
+        print_error(f'*Please fill the configuration file: {settings_file_name}')
+        if not os.path.isdir(app_settings.folder_process):
+            print_error(f'*Not exist "folder: {app_settings.folder_process}"')
+        if not os.path.isdir(app_settings.folder_result):
+            print_error(f'*Not exist "folder: {app_settings.folder_result}"')
+        print_result(f'\n*Press Space to Exit...')
+        keyboard.wait("space")
+        sys.exit(0)
+    else:
+        # Comment
+        print_value(f'Folder (process): {app_settings.folder_process}')
+        print_value(f'Folder (result): {app_settings.folder_result}')
+        print_value(f'Process *.vip: {app_settings.ext_vip}')
+        print_value(f'Process *.slk: {app_settings.ext_slk}')
+        print_value(f'Process *.rtf: {app_settings.ext_rtf}')
+        print_value(f'Process *.gcd: {app_settings.ext_gcd}')
+        print_value(f'Process *.fr3: {app_settings.ext_fr3}')
 
-    # Debug
-    settings_create_excel = True
+        # Debug
+        settings_create_excel = True
+        print_header('Press Space to continue... (It the longest shortcut \\_(o0)_\\)')
+        key_name = keyboard.read_key()
 
-    print_header('Press Space to continue... (It the longest shortcut \\_(o0)_\\)')
-    key_name = keyboard.read_key()
-
-    if key_name == "space":
-        # Start parse
-        if os.path.isdir(app_settings.folder_process) and os.path.isdir(app_settings.folder_result):
+        if key_name == "space":
             try:
                 main(app_settings)
                 print_result(f'\n\nAll Process done.')
@@ -596,15 +620,5 @@ if __name__ == "__main__":
             print_result(f'\n*Press any key to Exit...')
             keyboard.wait("space")
         else:
-            print_error(f'*Please fill the configuration file: {settings_file_name}')
-            if not os.path.isdir(app_settings.folder_process):
-                print_error(f'*Not exist "folder: {app_settings.folder_process}"')
-            if not os.path.isdir(app_settings.folder_result):
-                print_error(f'*Not exist "folder: {app_settings.folder_result}"')
-            print_warning(f'\n*Press Space to Exit...')
+            print_result(f'Cancel parse...\n*Press Space to Exit...')
             keyboard.wait("space")
-    else:
-        print_warning(f'Cancel parse...\n*Press Space to Exit...')
-        keyboard.wait("space")
-
-
